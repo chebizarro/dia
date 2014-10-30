@@ -9,7 +9,7 @@ AC_PREREQ(2.50)
 AC_REVISION($Revision: 1.288 $)
 
 dnl Specify a header configuration file
-AC_CONFIG_HEADER(config.h)
+AC_CONFIG_HEADERS(config.h)
 
 AC_CANONICAL_HOST
 
@@ -380,9 +380,6 @@ AM_GLIB_GNU_GETTEXT
 dnl INTLOBJS doesn't seem to always get subst'ed, but I believe it's
 dnl idempotent
 AC_SUBST(INTLOBJS)
-
-localedir='${prefix}/${DATADIRNAME}/locale'
-AC_SUBST(localedir)
 
 dnl
 dnl Locate the gnome-xml library

@@ -998,7 +998,7 @@ diagram_data_write_doc(DiagramData *data, const char *filename, DiaContext *ctx)
     while (layer_node && xmlStrcmp (layer_node->name, (xmlChar *)"layer") != 0)
       layer_node = layer_node->next;
     if (!layer_node) {
-      dia_context_add_message (ctx, _("Error saving connections"), layer->name);
+      dia_context_add_message (ctx, _("Error saving connections to layer '%s'"), layer->name);
       break;
     }
     res = write_connections(layer->objects, layer_node, objects_hash);
@@ -1133,7 +1133,7 @@ diagram_data_save(DiagramData *data, DiaContext *ctx, const char *user_filename)
   g_rename(filename,bakname);
   ret = g_rename(tmpname,filename);
   if (ret < 0) {
-    dia_context_add_message_with_errno(ctx, errno, _("Can't rename %s to final output file %s: %s\n"), 
+    dia_context_add_message_with_errno(ctx, errno, _("Can't rename %s to final output file %s"), 
 				       dia_message_filename(tmpname),
 				       dia_context_get_filename(ctx));
   }
@@ -1251,8 +1251,12 @@ diagram_autosave(Diagram *dia)
 	asi->filename = g_strdup (save_filename);
 	asi->ctx = dia_context_new (_("Auto save"));
 
+#if GLIB_CHECK_VERSION(2,32,0)
+	if (!g_thread_try_new ("Autosave", _autosave_in_thread, asi, &error)) {
+#else
 	if (!g_thread_create (_autosave_in_thread, asi, FALSE, &error)) {
-	  message_error (error->message);
+#endif
+	  message_error ("%s", error->message);
 	  g_error_free (error);
 	}
 	/* FIXME: need better synchronization */

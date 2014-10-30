@@ -22,6 +22,7 @@
 
 #include "geometry.h"
 #include "boundingbox.h"
+#include "path-math.h"
 
 #include <string.h> /* memcmp() */
 
@@ -315,7 +316,7 @@ _extract_splits (const GArray *crossing, gboolean one)
   GArray *result = g_array_new (FALSE, FALSE, sizeof(Split));
   int i;
   for (i = 0; i < crossing->len; ++i) {
-    Split sp = { 0 };
+    Split sp = { { 0, 0 }, 0 };
     sp.pt = g_array_index (crossing, Intersection, i).pt;
     if (one) {
       sp.seg = g_array_index (crossing, Intersection, i).seg_one;
@@ -585,6 +586,7 @@ _append_segments (GArray  *path,
     bp.type = BEZ_MOVE_TO;
     bp.p1 = sseg->p0;
     g_array_append_val (path, bp);
+    flip = FALSE;
   }
 
   if (flip) {
@@ -847,3 +849,4 @@ path_combine (const GArray   *p1,
   }
   return result;
 }
+

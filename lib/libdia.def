@@ -300,6 +300,7 @@ EXPORTS
  pixbuf_decode_base64
 
  dia_path_renderer_get_type
+ path_build_ellipse
 
  dia_pattern_new
  dia_pattern_add_color
@@ -491,7 +492,6 @@ EXPORTS
  group_destroy_shallow
  group_objects
  group_type
- group_transform
 
  get_active_focus
  give_focus
@@ -744,6 +744,7 @@ EXPORTS
  text_get_ascent
  text_get_attributes
  text_get_descent
+ text_get_height
  text_get_line
  text_get_line_strlen
  text_get_line_width
