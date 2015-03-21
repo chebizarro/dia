@@ -408,7 +408,7 @@ ddisplay_add_update_all(DDisplay *ddisp)
 /** Marks a rectangle for update, with a pixel border around it.
  */
 void
-ddisplay_add_update_with_border(DDisplay *ddisp, Rectangle *rect,
+ddisplay_add_update_with_border(DDisplay *ddisp, const Rectangle *rect,
 				int pixel_border)
 {
   Rectangle r;
@@ -832,15 +832,10 @@ ddisplay_set_snap_to_grid(DDisplay *ddisp, gboolean snap)
   GtkToggleAction *snap_to_grid;
   ddisp->grid.snap = snap;
 
-    if (ddisp->menu_bar == NULL) {
-      snap_to_grid = GTK_TOGGLE_ACTION (menus_get_action ("ViewSnaptogrid"));
-      if (is_integrated_ui ())
-         integrated_ui_toolbar_grid_snap_synchronize_to_display (ddisp);
-    } else {
-      snap_to_grid = GTK_TOGGLE_ACTION (gtk_action_group_get_action (ddisp->actions, "ViewSnaptogrid"));
-    }
-  /* Currently, this can cause double emit, but that's a small problem.
-   */
+  snap_to_grid = GTK_TOGGLE_ACTION (menus_get_action ("ViewSnaptogrid"));
+  if (is_integrated_ui ())
+    integrated_ui_toolbar_grid_snap_synchronize_to_display (ddisp);
+  /* Currently, this can cause double emit, but that's a small problem. */
   gtk_toggle_action_set_active (snap_to_grid, ddisp->grid.snap);
   ddisplay_update_statusbar(ddisp);
 }
@@ -864,16 +859,10 @@ ddisplay_set_snap_to_objects(DDisplay *ddisp, gboolean magnetic)
   GtkToggleAction *mainpoint_magnetism;
   ddisp->mainpoint_magnetism = magnetic;
 
-  if (ddisp->menu_bar == NULL) {
-    mainpoint_magnetism = GTK_TOGGLE_ACTION (menus_get_action ("ViewSnaptoobjects"));
-    if (is_integrated_ui ())
-      integrated_ui_toolbar_object_snap_synchronize_to_display (ddisp);
-  } else {
-    mainpoint_magnetism = GTK_TOGGLE_ACTION (gtk_action_group_get_action (ddisp->actions, "ViewSnaptoobjects"));
-  }
-
-  /* Currently, this can cause double emit, but that's a small problem.
-   */
+  mainpoint_magnetism = GTK_TOGGLE_ACTION (menus_get_action ("ViewSnaptoobjects"));
+  if (is_integrated_ui ())
+    integrated_ui_toolbar_object_snap_synchronize_to_display (ddisp);
+  /* Currently, this can cause double emit, but that's a small problem. */
   gtk_toggle_action_set_active (mainpoint_magnetism, ddisp->mainpoint_magnetism);
   ddisplay_update_statusbar(ddisp);
 }
@@ -1336,34 +1325,35 @@ display_update_menu_state(DDisplay *ddisp)
   GtkToggleAction *snap_to_grid;
   GtkToggleAction *show_cx_pts;
   GtkToggleAction *antialiased;
+  gboolean scrollbars_shown;
 
-  if (ddisp->menu_bar == NULL) {
-    rulers       = GTK_TOGGLE_ACTION (menus_get_action ("ViewShowrulers"));
-    visible_grid = GTK_TOGGLE_ACTION (menus_get_action ("ViewShowgrid"));
-    snap_to_grid = GTK_TOGGLE_ACTION (menus_get_action ("ViewSnaptogrid"));
-    show_cx_pts  = GTK_TOGGLE_ACTION (menus_get_action ("ViewShowconnectionpoints"));
-    antialiased  = GTK_TOGGLE_ACTION (menus_get_action ("ViewAntialiased"));
-  } else {
-    rulers       = GTK_TOGGLE_ACTION (gtk_action_group_get_action (ddisp->actions, "ViewShowrulers"));
-    visible_grid = GTK_TOGGLE_ACTION (gtk_action_group_get_action (ddisp->actions, "ViewShowgrid"));
-    snap_to_grid = GTK_TOGGLE_ACTION (gtk_action_group_get_action (ddisp->actions, "ViewSnaptogrid"));
-    show_cx_pts  = GTK_TOGGLE_ACTION (gtk_action_group_get_action (ddisp->actions, "ViewShowconnectionpoints"));
+  rulers       = GTK_TOGGLE_ACTION (menus_get_action ("ViewShowrulers"));
+  visible_grid = GTK_TOGGLE_ACTION (menus_get_action ("ViewShowgrid"));
+  snap_to_grid = GTK_TOGGLE_ACTION (menus_get_action ("ViewSnaptogrid"));
+  show_cx_pts  = GTK_TOGGLE_ACTION (menus_get_action ("ViewShowconnectionpoints"));
+  antialiased  = GTK_TOGGLE_ACTION (menus_get_action ("ViewAntialiased"));
 
-    antialiased  = GTK_TOGGLE_ACTION (gtk_action_group_get_action (ddisp->actions, "ViewAntialiased"));
-  }
   gtk_action_set_sensitive (menus_get_action ("ViewAntialiased"), 
 		            g_type_from_name ("DiaCairoInteractiveRenderer") != 0 || g_type_from_name ("DiaLibartRenderer") != 0);
-
 
   ddisplay_do_update_menu_sensitivity (ddisp);
 
   gtk_toggle_action_set_active (rulers, display_get_rulers_showing(ddisp));
+
+#if GTK_CHECK_VERSION(2,20,0)
+  scrollbars_shown = gtk_widget_get_visible (ddisp->hsb);
+#else
+  scrollbars_shown = GTK_WIDGET_VISIBLE (ddisp->hsb);
+#endif
+  gtk_toggle_action_set_active (GTK_TOGGLE_ACTION (menus_get_action ("ViewShowscrollbars")),
+				scrollbars_shown);
+
   gtk_toggle_action_set_active (visible_grid,
-				 ddisp->grid.visible);
+				ddisp->grid.visible);
   gtk_toggle_action_set_active (snap_to_grid,
-				 ddisp->grid.snap);
+				ddisp->grid.snap);
   gtk_toggle_action_set_active (show_cx_pts,
-				 ddisp->show_cx_pts); 
+				ddisp->show_cx_pts); 
 
   gtk_toggle_action_set_active (antialiased,
 				ddisp->aa_renderer);

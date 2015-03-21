@@ -37,6 +37,7 @@
 #include "dia_image.h"
 #include "message.h"
 #include "properties.h"
+#include "dia_dirs.h"
 
 #include "tool-icons.h"
 
@@ -71,6 +72,8 @@ struct _Image {
 
   gboolean draw_border;
   gboolean keep_aspect;
+
+  real angle;
 
   time_t mtime;
 };
@@ -113,6 +116,8 @@ static ObjectTypeOps image_type_ops =
   (ApplyDefaultsFunc) NULL
 };
 
+static PropNumData _image_angle_range = { -180.0, 180.0, 5.0 };
+
 static PropDescription image_props[] = {
   ELEMENT_COMMON_PROPERTIES,
   { "image_file", PROP_TYPE_FILE, PROP_FLAG_VISIBLE,
@@ -125,6 +130,8 @@ static PropDescription image_props[] = {
     N_("Draw border"), NULL, NULL},
   { "keep_aspect", PROP_TYPE_BOOL, PROP_FLAG_VISIBLE,
     N_("Keep aspect ratio"), NULL, NULL},
+  { "angle", PROP_TYPE_REAL, PROP_FLAG_VISIBLE | PROP_FLAG_OPTIONAL,
+    N_("Angle"), NULL, &_image_angle_range },
   PROP_STD_LINE_WIDTH,
   PROP_STD_LINE_COLOUR,
   PROP_STD_LINE_STYLE,
@@ -171,6 +178,7 @@ static PropOffset image_offsets[] = {
   { "pixbuf", PROP_TYPE_PIXBUF, offsetof(Image, pixbuf) },
   { "show_border", PROP_TYPE_BOOL, offsetof(Image, draw_border) },
   { "keep_aspect", PROP_TYPE_BOOL, offsetof(Image, keep_aspect) },
+  { "angle", PROP_TYPE_REAL, offsetof(Image,angle)},
   { PROP_STDNAME_LINE_WIDTH, PROP_STDTYPE_LINE_WIDTH, offsetof(Image, border_width) },
   { "line_colour", PROP_TYPE_COLOUR, offsetof(Image, border_color) },
   { "line_style", PROP_TYPE_LINESTYLE,
@@ -302,6 +310,11 @@ image_distance_from(Image *image, Point *point)
   Rectangle rect;
   real bw = image->draw_border ? image->border_width : 0;
 
+  if (image->angle != 0.0) {
+    Point corners[4];
+    element_get_poly (elem, image->angle, corners);
+    return distance_polygon_point (corners, 4, bw, point);
+  }
   rect.left = elem->corner.x - bw;
   rect.right = elem->corner.x + elem->width + bw;
   rect.top = elem->corner.y - bw;
@@ -446,20 +459,30 @@ image_draw(Image *image, DiaRenderer *renderer)
     renderer_ops->set_linewidth(renderer, image->border_width);
     renderer_ops->set_linestyle(renderer, image->line_style, image->dashlength);
     renderer_ops->set_linejoin(renderer, LINEJOIN_MITER);
-    
-    renderer_ops->draw_rect(renderer, 
-			     &ul_corner,
-			     &lr_corner,
-			     NULL,
-			     &image->border_color);
+
+    if (image->angle != 0.0) {
+      Point poly[4];
+      element_get_poly (elem, image->angle, poly);
+      /* need to grow the poly, XXX: done here by growing the border width */
+      renderer_ops->set_linewidth(renderer, image->border_width * 2);
+      renderer_ops->draw_polygon (renderer, poly, 4, NULL, &image->border_color);
+    } else {
+      renderer_ops->draw_rect (renderer,
+			       &ul_corner, &lr_corner,
+			       NULL, &image->border_color);
+    }
   }
   /* Draw the image */
   if (image->image) {
-    renderer_ops->draw_image(renderer, &elem->corner, elem->width,
-			      elem->height, image->image);
+    if (image->angle == 0.0)
+      renderer_ops->draw_image (renderer, &elem->corner, elem->width,
+			        elem->height, image->image);
+    else
+      renderer_ops->draw_rotated_image (renderer, &elem->corner, elem->width,
+					elem->height, image->angle, image->image);
   } else {
     DiaImage *broken = dia_image_get_broken();
-    renderer_ops->draw_image(renderer, &elem->corner, elem->width,
+    renderer_ops->draw_image (renderer, &elem->corner, elem->width,
 			      elem->height, broken);
     dia_image_unref(broken);
   }
@@ -484,11 +507,12 @@ image_transform(Image *image, const DiaMatrix *m)
 
     /* rotation is invariant to the center */
     transform_point (&c, m);
-    /* XXX: implement image rotate! */
     elem->width = width;
     elem->height = height;
+    image->angle = angle;
     elem->corner.x = c.x - width / 2.0;
     elem->corner.y = c.y - height / 2.0;
+    image_update_data (image);
   }
   return TRUE;
 }
@@ -512,30 +536,32 @@ image_update_data(Image *image)
   }
 
   /* Update connections: */
-  image->connections[0].pos = elem->corner;
-  image->connections[1].pos.x = elem->corner.x + elem->width / 2.0;
-  image->connections[1].pos.y = elem->corner.y;
-  image->connections[2].pos.x = elem->corner.x + elem->width;
-  image->connections[2].pos.y = elem->corner.y;
-  image->connections[3].pos.x = elem->corner.x;
-  image->connections[3].pos.y = elem->corner.y + elem->height / 2.0;
-  image->connections[4].pos.x = elem->corner.x + elem->width;
-  image->connections[4].pos.y = elem->corner.y + elem->height / 2.0;
-  image->connections[5].pos.x = elem->corner.x;
-  image->connections[5].pos.y = elem->corner.y + elem->height;
-  image->connections[6].pos.x = elem->corner.x + elem->width / 2.0;
-  image->connections[6].pos.y = elem->corner.y + elem->height;
-  image->connections[7].pos.x = elem->corner.x + elem->width;
-  image->connections[7].pos.y = elem->corner.y + elem->height;
-  image->connections[8].pos.x = elem->corner.x + elem->width / 2.0;
-  image->connections[8].pos.y = elem->corner.y + elem->height / 2.0;
-  
-  /* the image border is drawn vompletely outside of the image, so no /2.0 on border width */
-  extra->border_trans = (image->draw_border ? image->border_width : 0.0);
-  element_update_boundingbox(elem);
-  
+  element_update_connections_rectangle (elem, image->connections);
+
+  if (image->angle != 0) {
+    real cx = elem->corner.x + elem->width / 2.0;
+    real cy = elem->corner.y + elem->height / 2.0;
+    DiaMatrix m = { 1.0, 0.0, 0.0, 1.0, cx, cy };
+    DiaMatrix t = { 1.0, 0.0, 0.0, 1.0, -cx, -cy };
+    int i;
+    PolyBBExtras extra = { 0, };
+    Point poly[4];
+
+
+    dia_matrix_set_angle_and_scales (&m, G_PI*image->angle/180, 1.0, 1.0);
+    dia_matrix_multiply (&m, &t, &m);
+    for (i = 0; i < 8; ++i)
+      transform_point (&image->connections[i].pos, &m);
+
+    element_get_poly (elem, image->angle, poly);
+    extra.middle_trans = (image->draw_border ? image->border_width : 0.0);
+    polyline_bbox(poly, 4, &extra, TRUE, &elem->object.bounding_box);
+  } else {
+    /* the image border is drawn completely outside of the image, so no /2.0 on border width */
+    extra->border_trans = (image->draw_border ? image->border_width : 0.0);
+    element_update_boundingbox(elem);
+  }
   obj->position = elem->corner;
-  image->connections[8].directions = DIR_ALL;
   element_update_handles(elem);
 }
 
@@ -633,6 +659,7 @@ image_copy(Image *image)
   newimage->border_width = image->border_width;
   newimage->border_color = image->border_color;
   newimage->line_style = image->line_style;
+  newimage->angle = image->angle;
   
   for (i=0;i<NUM_CONNECTIONS;i++) {
     newobj->connections[i] = &newimage->connections[i];
@@ -647,8 +674,8 @@ image_copy(Image *image)
     dia_image_add_ref(image->image);
   newimage->image = image->image;
 
-  /* not sure if we only want a reference, but it would be safe when 
-   * someday editing doe not work inplace, but creates new pixbufs 
+  /* not sure if we only want a reference, but it would be safe when someday
+   * editing does not work inplace anymore and instead creates new pixbufs
    * for every single undoable step */
   newimage->inline_data = image->inline_data;
   if (image->pixbuf)
@@ -663,41 +690,9 @@ image_copy(Image *image)
   return &newimage->element.object;
 }
 
-/* Gets the directory path of a filename.
-   Uses current working directory if filename is a relative pathname.
-   Examples:
-     /some/dir/file.gif => /some/dir
-     dir/file.gif => /cwd/dir
-   
-*/
-static char *
-get_directory(const char *filename) 
-{
-  char *cwd;
-  char *directory;
-  char *dirname;
-  
-  if (filename==NULL)
-    return NULL;
-
-  dirname = g_path_get_dirname(filename);
-  if (g_path_is_absolute(dirname)) {
-      directory = g_build_path(G_DIR_SEPARATOR_S, dirname, NULL);
-  } else {
-      cwd = g_get_current_dir();
-      directory = g_build_path(G_DIR_SEPARATOR_S, cwd, dirname, NULL);
-      g_free(cwd);
-  }
-  g_free(dirname);
-
-  return directory;
-}
-
 static void
 image_save(Image *image, ObjectNode obj_node, DiaContext *ctx)
 {
-  char *diafile_dir;
-  
   element_save(&image->element, obj_node, ctx);
 
   if (image->border_width != 0.1)
@@ -720,23 +715,18 @@ image_save(Image *image, ObjectNode obj_node, DiaContext *ctx)
   data_add_boolean(new_attribute(obj_node, "draw_border"), image->draw_border, ctx);
   data_add_boolean(new_attribute(obj_node, "keep_aspect"), image->keep_aspect, ctx);
 
-  if (image->file != NULL) {
-    if (g_path_is_absolute(image->file)) { /* Absolute pathname */
-      diafile_dir = get_directory(dia_context_get_filename (ctx));
+  if (image->angle != 0.0)
+    data_add_real(new_attribute(obj_node, "angle"), image->angle, ctx);
 
-      if (diafile_dir && strncmp(diafile_dir, image->file, strlen(diafile_dir))==0) {
-	/* The image pathname has the dia file pathname in the begining */
-	/* Save the relative path: */
-	data_add_filename(new_attribute(obj_node, "file"),
-			  image->file + strlen(diafile_dir) + 1, ctx);
-      } else {
-	/* Save the absolute path: */
-	data_add_filename(new_attribute(obj_node, "file"), image->file, ctx);
-      }
-      g_free(diafile_dir);
+  if (image->file != NULL) {
+    gchar *relative = dia_relativize_filename (dia_context_get_filename (ctx), image->file);
+
+    if (relative) {
+      /* The image pathname has the diagram file pathname in the beginning */
+      data_add_filename(new_attribute(obj_node, "file"), relative, ctx);
+      g_free (relative);
     } else {
-      /* Relative path. Must be an erronuous filename...
-	 Just save the filename. */
+      /* Save the absolute path: */
       data_add_filename(new_attribute(obj_node, "file"), image->file, ctx);
     }
   }
@@ -804,6 +794,11 @@ image_load(ObjectNode obj_node, int version, DiaContext *ctx)
   if (attr != NULL)
     image->keep_aspect =  data_boolean(attribute_first_data(attr), ctx);
 
+  image->angle = 0.0;
+  attr = object_find_attribute(obj_node, "angle");
+  if (attr != NULL)
+    image->angle = data_real(attribute_first_data(attr), ctx);
+
   attr = object_find_attribute(obj_node, "file");
   if (attr != NULL) {
     image->file =  data_filename(attribute_first_data(attr), ctx);
@@ -823,74 +818,28 @@ image_load(ObjectNode obj_node, int version, DiaContext *ctx)
   image->image = NULL;
   
   if (strcmp(image->file, "")!=0) {
-    diafile_dir = get_directory(dia_context_get_filename(ctx));
-
-    if (g_path_is_absolute(image->file)) { /* Absolute pathname */
+    if (   g_path_is_absolute (image->file)
+	&& g_file_test (image->file, G_FILE_TEST_IS_REGULAR)) { /* Absolute pathname */
       image->image = dia_image_load(image->file);
-      if (image->image == NULL) {
-	/* Not found as abs path, try in same dir as diagram. */
-	char *temp_string;
-	const char *image_file_name = image->file;
-	const char *psep;
+    } else { /* build from relative pathname */
+      gchar *image_filename = dia_absolutize_filename (dia_context_get_filename (ctx), image->file);
 
-	psep = strrchr(image->file, G_DIR_SEPARATOR);
-	/* try the other G_OS as well */
-	if (!psep)
-	  psep =  strrchr(image->file, G_DIR_SEPARATOR == '/' ? '\\' : '/');
-	if (psep)
-	  image_file_name = psep + 1;
-
-	temp_string = g_build_filename(diafile_dir, image_file_name, NULL);
-
-	image->image = dia_image_load(temp_string);
-
-	if (image->image != NULL) {
-	  /* Found file in same dir as diagram. */
-	  message_warning(_("The image file '%s' was not found in the specified directory.\n"
-			  "Using the file '%s' instead.\n"), image->file, temp_string);
-	  g_free(image->file);
-	  image->file = temp_string;
-	} else {
-	  g_free(temp_string);
-	  
-	  image->image = dia_image_load((char *)image_file_name);
-	  if (image->image != NULL) {
-	    char *tmp;
-	    /* Found file in current dir. */
-	    message_warning(_("The image file '%s' was not found in the specified directory.\n"
-			    "Using the file '%s' instead.\n"), image->file, image_file_name);
-	    tmp = image->file;
-	    image->file = g_strdup(image_file_name);
-	    g_free(tmp);
-	  } else {
-	    message_warning(_("The image file '%s' was not found.\n"),
-			    image_file_name);
-	  }
-	}
-      }
-    } else { /* Relative pathname: */
-      char *temp_string;
-
-      temp_string = g_build_filename (diafile_dir, image->file, NULL);
-
-      image->image = dia_image_load(temp_string);
-
+      image->image = dia_image_load(image_filename);
       if (image->image != NULL) {
-	/* Found file in same dir as diagram. */
+	/* Found file in same directory as diagram. */
 	g_free(image->file);
-	image->file = temp_string;
+	image->file = image_filename;
       } else {
-	g_free(temp_string);
-	  
+	/* not found as relative path, try literally */
+	g_free (image_filename);
+
 	image->image = dia_image_load(image->file);
 	if (image->image == NULL) {
-	  /* Didn't find file in current dir. */
-	  message_warning(_("The image file '%s' was not found.\n"),
-			  image->file);
+	  /* Didn't find file in current directory. */
+	  dia_context_add_message (ctx, _("The image file '%s' was not found.\n"), image->file);
 	}
       }
     }
-    g_free(diafile_dir);
   }
   /* if we don't have an image yet try to recover it from inlined data */
   if (!image->image) {

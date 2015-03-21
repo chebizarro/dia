@@ -64,11 +64,11 @@
 
 /** A small wrapper to connect to the model */
 static GtkCellRenderer *
-_cell_renderer_enum_new (const Property *p)
+_cell_renderer_enum_new (const Property *p, GtkTreeView *tree_view)
 {
   const EnumProperty *prop = (const EnumProperty *)p;
   PropEnumData *enumdata = prop->common.descr->extra_data;
-  GtkCellRenderer *cren = dia_cell_renderer_enum_new (enumdata);
+  GtkCellRenderer *cren = dia_cell_renderer_enum_new (enumdata, tree_view);
 
   return cren;
 }
@@ -91,23 +91,6 @@ _cell_renderer_real_new (const Property *p)
 
   return cren;
 }
-static void
-_toggle_data_func (GtkTreeViewColumn *tree_column,
-		   GtkCellRenderer   *cell,
-		   GtkTreeModel      *model,
-		   GtkTreeIter       *iter,
-		   gpointer           user_data)
-{
-  gint column = GPOINTER_TO_INT (user_data);
-  gboolean value;
-
-  gtk_tree_model_get (GTK_TREE_MODEL (model), iter, 
-                      column, &value, -1);
-  gtk_tree_store_set (GTK_TREE_STORE (model), iter, 
-                      column, value, -1);
-}
-/* Found no built-in way to get to the column in the callback ... */
-#define COLUMN_KEY "column-key"
 /** Make it editable, connect signals */
 static void
 _toggle_callback (GtkCellRendererToggle *renderer,

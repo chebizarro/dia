@@ -69,10 +69,31 @@ _test_creation (gconstpointer user_data)
   {
     const PropDescription *pdesc = o->ops->describe_props (o);
     /* get all properties */
-    GPtrArray *plist = prop_list_from_descs (pdesc, pdtpp_true);
-    
-    g_assert (plist != NULL);
-    prop_list_free(plist);
+    GPtrArray *props = prop_list_from_descs (pdesc, pdtpp_true);
+    int num_described = props->len;
+    int num_used = 0;
+
+    /* Indirect check of object's private PropDescription and PropOffset array.
+     * Both arrays should be same length (reference the same properties).
+     * But the latter is only visible as parameter to object_get_props_from_offsets(),
+     * at least for objects not intialzing DiaObjectType::prop_offsets
+     */
+    o->ops->get_props (o, props);
+    for (i = 0; i < num_described; ++i) {
+      Property *prop = (Property*)g_ptr_array_index(props,i);
+      if ((prop->experience & PXP_NOTSET) == 0)
+        ++num_used;
+      else if ((prop->descr->flags & PROP_FLAG_WIDGET_ONLY) != 0)
+	++num_used; /* ... but not expected to be set */
+      else if (strcmp (prop->descr->type, PROP_TYPE_STATIC) == 0)
+	++num_used; /* also not to be set */
+      else
+	g_print ("Not set '%s'\n", prop->descr->name);
+    }
+    g_assert_cmpint (num_used, ==, num_described);
+
+    g_assert (props != NULL);
+    prop_list_free(props);
   }
   /* not implemented anywhere */
   g_assert (o->ops->edit_text == NULL);
@@ -312,7 +333,24 @@ _test_move_handle (gconstpointer user_data)
   ObjectChange *change;
   ConnectionPoint *cp = NULL;
   gint i;
-  
+
+  if (h1)
+    {
+      /* The first handle is used to connect - if possible.
+       * Only very few object return in unconnectable handle, namely:
+       *   "Standard - Beziergon", "Standard - Path", "Standard - Polygon",
+       *   "Database - Compound",
+       *   "GRAFCET - Condition",
+       *   "Misc - Ngon",
+       *   "Network - Radio Cell"
+       * This is not a bug in these object implementations, because other
+       * uses are possible ...
+       */
+      if (h1->connect_type != HANDLE_CONNECTABLE)
+        g_test_message ("Handle 1 not connectable");
+
+    }
+
   if (h2) /* not mandatory to return one */
     {
       Point to = h2->pos;
@@ -412,6 +450,7 @@ _test_connectionpoint_consistency (gconstpointer user_data)
   ObjectChange *change;
   int i;
   gboolean any_dir_set = FALSE;
+  ConnectionPoint *cp_prev = NULL;
 
   change = dia_object_set_string (o, NULL, "Test me!");
   _object_change_free (change);
@@ -437,6 +476,7 @@ _test_connectionpoint_consistency (gconstpointer user_data)
   pos = o->position;
   center.x = (o->bounding_box.right + o->bounding_box.left) / 2;
   center.y = (o->bounding_box.bottom + o->bounding_box.top) / 2;
+
   for (i = 0; i < o->num_connections; ++i) {
     ConnectionPoint *cp = o->connections[i];
     if (cp->directions == DIR_ALL) {
@@ -491,6 +531,26 @@ _test_connectionpoint_consistency (gconstpointer user_data)
       g_assert ((cp->directions & DIR_NORTH) == 0);
     else if (cp->pos.y < center.y)
       g_assert ((cp->directions & DIR_SOUTH) == 0);
+  }
+
+  if (o->num_connections > 1)
+    cp_prev = o->connections[o->num_connections-1];
+  for (i = 0; i < o->num_connections; ++i) {
+    ConnectionPoint *cp = o->connections[i];
+    if (cp_prev) {
+      /* if the previous cp had the same coordinate x or y it should have the same direction */
+      if (   strcmp (type->name, "GRAFCET - Vergent") == 0
+	  || strcmp (type->name, "Standard - Polygon") == 0)
+	continue; /* not a hard requirement */
+      /* not with main point which usually has DIR_ALL */
+      if (cp_prev->directions != DIR_ALL && cp->directions != DIR_ALL) {
+	if (cp_prev->pos.x == cp->pos.x)
+	  g_assert_cmpint ((cp_prev->directions & (DIR_WEST|DIR_EAST)), ==, (cp->directions & (DIR_WEST|DIR_EAST)));
+	if (cp_prev->pos.y == cp->pos.y)
+	  g_assert_cmpint ((cp_prev->directions & (DIR_NORTH|DIR_SOUTH)), ==, (cp->directions & (DIR_NORTH|DIR_SOUTH)));
+      }
+      cp_prev = cp;
+    }
   }
   /* every connection point should be in bounds of the object */
   for (i = 0; i < o->num_connections; ++i) {

@@ -44,6 +44,7 @@
 #include "filter.h"
 #include "objchange.h"
 #include "toolbox.h"
+#include "diagram_tree.h"
 
 #define DIA_STOCK_GROUP "dia-stock-group"
 #define DIA_STOCK_UNGROUP "dia-stock-ungroup"
@@ -95,8 +96,6 @@ static const GtkActionEntry common_entries[] =
     { "HelpContents", GTK_STOCK_HELP, NULL, "F1", N_("Dia help"), G_CALLBACK (help_manual_callback) },
     { "HelpAbout", GTK_STOCK_ABOUT, NULL, NULL, N_("Dia version, authors, license"), G_CALLBACK (help_about_callback) }
 };
-
-extern void diagram_tree_show(void);
 
 /* Actions for toolbox menu */
 static const GtkActionEntry toolbox_entries[] = 
@@ -262,6 +261,7 @@ static const GtkToggleActionEntry display_toggle_entries[] =
     { "ViewSnaptogrid", NULL, N_("_Snap to Grid"), NULL, NULL, G_CALLBACK (view_snap_to_grid_callback) },
     { "ViewSnaptoobjects", NULL, N_("Snap to _Objects"), NULL, NULL, G_CALLBACK (view_snap_to_objects_callback) },
     { "ViewShowrulers", NULL, N_("Show _Rulers"), NULL, NULL, G_CALLBACK (view_toggle_rulers_callback)  },
+    { "ViewShowscrollbars", NULL, N_("Show Scrollbars"), NULL, N_("Show or hide the toolbar"), G_CALLBACK (view_toggle_scrollbars_callback) },
     { "ViewShowconnectionpoints", NULL, N_("Show _Connection Points"), NULL, NULL, G_CALLBACK (view_show_cx_pts_callback) }
 };
 
